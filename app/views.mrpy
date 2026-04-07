@@ -150,10 +150,13 @@
             "has_front_matter" false
             "front_matter" ""
             "body" text}
-        {dict
-            "has_front_matter" true
-            "front_matter" {text.__getitem__ {slice 4 closing null}}
-            "body" {text.__getitem__ {slice closing + 5 null null}}}}
+        {do
+            front_matter_text = text @ (4 .. closing)
+            body_text = text @ ((closing + 5) .. null)
+            {dict
+                "has_front_matter" true
+                "front_matter" front_matter_text
+                "body" body_text}}}
 }
 
 

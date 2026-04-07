@@ -121,7 +121,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 {fun _build_recent_files [site_root]
     recent = {_visible_files site_root} | {sorted _ key=_recent_file_sort_key reverse=true} | list
-    recent_subset = {recent.__getitem__ {slice 0 6 null}}
+    recent_subset = recent @ (0 .. 6)
     recent_subset | {map {_recent_file_entry site_root _} _} | list
 }
 
@@ -161,7 +161,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 {fun _single_value_dict [parsed]
     result = {dict}
     {for key parsed
-        {result.__setitem__ key {_first_query_value {parsed.__getitem__ key}}}}
+        result @ key = {_first_query_value {parsed @ key}}}
     result
 }
 
@@ -255,7 +255,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 {fun _truncate_text [text limit]
     {if {len text} > limit
-        {text.__getitem__ {slice 0 limit null}} + "\n\n...[truncated]"
+        text @ (0 .. limit) + "\n\n...[truncated]"
         text}
 }
 
@@ -614,14 +614,13 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
     title = {state.get "app_title"}
     site_root = {state.get "site_root"}
     sections = {state.get "sections"}
-    {print "Hugrell bootstrap looks OK."}
-    {print "Title:" title}
-    {print "Site root:" site_root}
+    "Hugrell bootstrap looks OK." | print
+    "Title: {title}"e | print
+    "Site root: {site_root}"e | print
     {for section sections
         label = {section.get "label"}
         count = {section.get "count"}
-        count_text = count|str
-        {print label + ":" + count_text + " file(s)"}}
+        "{label}:{count} file(s)"e | print}
 }
 
 
@@ -635,7 +634,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
     host = {state.get "listen_host"}
     port = {int {state.get "listen_port"}}
 
-    {print "Serving Hugrell on http://" + host + ":" + {str port}}
+    "Serving Hugrell on http://{host}:{port}"e | print
     httpd = {make_server host port application}
     {httpd.serve_forever}
 
