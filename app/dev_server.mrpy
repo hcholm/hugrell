@@ -128,7 +128,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 {fun _recent_file_entry [site_root entry]
     rel_file = {entry.relative_to site_root}
-    rel_path = rel_file | str
+    rel_path = {_normalise_rel_path {str rel_file}}
     stat = {entry.stat}
     {dict
         "name" entry.name
@@ -142,18 +142,27 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 }
 
 
+{fun _normalise_rel_path [rel_path]
+    {rel_path.replace "\\" "/"}
+}
+
+
 {fun _parse_query [environ]
     raw = {environ.get "QUERY_STRING" ""}
-    parsed = {urllib.parse.parse_qs raw}
-    result = {dict}
-    {for key parsed
-        {result.__setitem__ key {_first_query_value {parsed.__getitem__ key}}}}
-    result
+    {_single_value_dict {urllib.parse.parse_qs raw}}
 }
 
 
 {fun _first_query_value [values]
     {if {len values} > 0 values@0 ""}
+}
+
+
+{fun _single_value_dict [parsed]
+    result = {dict}
+    {for key parsed
+        {result.__setitem__ key {_first_query_value {parsed.__getitem__ key}}}}
+    result
 }
 
 
@@ -194,11 +203,16 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 }
 
 
+{fun _is_editable_file [path]
+    {not {_is_media_file path}}
+}
+
+
 {fun _append_browser_entries [entries site_root path depth selected_rel]
     {when {not {_should_show_entry path}}
         {return null}}
 
-    rel_path = {if path == site_root "" {str {path.relative_to site_root}}}
+    rel_path = {if path == site_root "" {_normalise_rel_path {str {path.relative_to site_root}}}}
     
     is_dir = {path.is_dir}
 
@@ -226,11 +240,23 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 
 {fun _read_text_preview [path]
-    {with {open {str path} encoding="utf-8" errors="replace"} as handle
-        text = {handle.read}
-        {if {len text} > 4000
-            {text.__getitem__ {slice 0 4000 null}} + "\n\n...[truncated]"
-            text}}
+    text = {_read_text_file path}
+    {_truncate_text text 4000}
+}
+
+
+{fun _read_text_file [path]
+    handle = {open {str path} encoding="utf-8" errors="replace"}
+    text = {handle.read}
+    {handle.close}
+    text
+}
+
+
+{fun _truncate_text [text limit]
+    {if {len text} > limit
+        {text.__getitem__ {slice 0 limit null}} + "\n\n...[truncated]"
+        text}
 }
 
 
@@ -239,40 +265,38 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
     {when rel_path == ""
         {return null}}
 
-    {try
-        target = {_resolve_site_path site_root rel_path}
-        {when {not {target.exists}}
-            {return {dict
-                "error" "Selected path does not exist."
-                "rel_path" rel_path}}}
+    target = {_resolve_site_path site_root rel_path}
+    {when {not {target.exists}}
+        {return {dict
+            "error" "Selected path does not exist."
+            "rel_path" rel_path}}}
 
-        {when {target.is_dir}
-            {return {dict
-                "rel_path" rel_path
-                "name" target.name
-                "kind" "dir"
-                "size" null
-                "preview" null
-                "suffix" ""
-                "modified" {str {target.stat}.st_mtime}}}}
-
-        stat = {target.stat}
-        {dict
+    {when {target.is_dir}
+        {return {dict
             "rel_path" rel_path
             "name" target.name
-            "kind" "file"
-            "size" stat.st_size
-            "suffix" target.suffix
-            "modified" {str stat.st_mtime}
-            "preview" {_read_text_preview target}}
-        {catch e:Exception
-            {dict
-                "error" e|str
-                "rel_path" rel_path}}}
+            "kind" "dir"
+            "size" null
+            "preview" null
+            "suffix" ""
+            "modified" {str {target.stat}.st_mtime}}}}
+
+    stat = {target.stat}
+    content = {_read_text_file target}
+    {dict
+        "rel_path" rel_path
+        "name" target.name
+        "kind" "file"
+        "size" stat.st_size
+        "suffix" target.suffix
+        "modified" {str stat.st_mtime}
+        "editable" {_is_editable_file target}
+        "content" content
+        "preview" {_truncate_text content 4000}}
 }
 
 
-{fun _build_state [project_root selected_rel]
+{fun _build_state [project_root selected_rel flash]
     project_root_str = {str project_root}
     config = {read_file project_root_str + "/hugrell.mron"}
     site_root = {_resolve_site_root project_root config}
@@ -339,6 +363,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
         "selected_rel_path" {_safe_rel_path selected_rel}
         "browser_entries" browser_entries
         "selected_file" selected_file
+        "flash" flash
         "htmx_ready" false
         "sections" sections
         "build_status" {dict
@@ -356,6 +381,16 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 }
 
 
+{fun _flash_from_query [query]
+    message = {query.get "flash_message" ""}
+    {if message == ""
+        null
+        {dict
+            "kind" {query.get "flash_kind" "info"}
+            "message" message}}
+}
+
+
 {fun _response [start_response status body content_type]
     {start_response status [
         ("Content-Type" content_type)
@@ -367,6 +402,15 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 {fun _text_response [start_response status text content_type]
     {_response start_response status {text.encode "utf-8"} content_type}
+}
+
+
+{fun _redirect_response [start_response location]
+    {start_response "303 See Other" [
+        ("Location" location)
+        ("Content-Length" "0")
+    ]}
+    [{ "".encode "utf-8"}]
 }
 
 
@@ -405,6 +449,84 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 }
 
 
+{fun _parse_form [environ]
+    length_text = {environ.get "CONTENT_LENGTH" "0"}
+    length = {if length_text == "" 0 {int length_text}}
+    raw_bytes = {{environ.get "wsgi.input"}.read length}
+    raw_text = {raw_bytes.decode "utf-8"}
+    {_single_value_dict {urllib.parse.parse_qs raw_text keep_blank_values=true}}
+}
+
+
+{fun _save_text_file [project_root form]
+    rel_path = {_safe_rel_path {form.get "path" ""}}
+    expected_modified = {form.get "expected_modified" ""}
+    content = {form.get "content" ""}
+
+    {when rel_path == ""
+        {return {dict
+            "ok" false
+            "kind" "error"
+            "message" "No file was selected for saving."
+            "rel_path" ""}}}
+
+    config = {read_file {str project_root} + "/hugrell.mron"}
+    site_root = {_resolve_site_root project_root config}
+    target = {_resolve_site_path site_root rel_path}
+
+    {when {not {target.exists}}
+        {return {dict
+            "ok" false
+            "kind" "error"
+            "message" "The selected file no longer exists."
+            "rel_path" rel_path}}}
+
+    {when {target.is_dir}
+        {return {dict
+            "ok" false
+            "kind" "error"
+            "message" "Directories cannot be saved through the text editor."
+            "rel_path" rel_path}}}
+
+    {when {not {_is_editable_file target}}
+        {return {dict
+            "ok" false
+            "kind" "error"
+            "message" "This file type is not editable in the current bootstrap."
+            "rel_path" rel_path}}}
+
+    current_modified = {str {target.stat}.st_mtime}
+    {when expected_modified != ""
+        {when current_modified != expected_modified
+            {return {dict
+                "ok" false
+                "kind" "error"
+                "message" "The file changed on disk before your save completed. Reload and try again."
+                "rel_path" rel_path}}}}
+
+    handle = {open {str target} "w" encoding="utf-8"}
+    {handle.write content}
+    {handle.close}
+
+    {dict
+        "ok" true
+        "kind" "success"
+        "message" "Saved " + rel_path
+        "rel_path" rel_path}
+}
+
+
+{fun _save_response [project_root environ start_response]
+    save_result = {_save_text_file project_root {_parse_form environ}}
+    redirect_query = {urllib.parse.urlencode
+        {dict
+            "path" {save_result.get "rel_path" ""}
+            "flash_kind" {save_result.get "kind" "info"}
+            "flash_message" {save_result.get "message" ""}}}
+    {_redirect_response start_response "/?" + redirect_query}
+}
+
+
 {fun _resolve_route [path]
     route = {match path
         "/"
@@ -417,6 +539,8 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
             {dict "kind" "browser"}
         "/health"
             {dict "kind" "health"}
+        "/save"
+            {dict "kind" "save"}
         _
             {dict "kind" "fallback"}}
 
@@ -432,13 +556,23 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 {fun application [environ start_response]
     path = {environ.get "PATH_INFO" "/"}
+    method = {environ.get "REQUEST_METHOD" "GET"}
     query = {_parse_query environ}
     selected_rel = {query.get "path" ""}
-    state = {_build_state PROJECT_ROOT selected_rel}
+    flash = {_flash_from_query query}
+    state = {_build_state PROJECT_ROOT selected_rel flash}
     route = {_resolve_route path}
     kind = {route.get "kind"}
 
     {match kind
+        "save"
+            {if method == "POST"
+                {_save_response PROJECT_ROOT environ start_response}
+                {_text_response
+                    start_response
+                    "405 Method Not Allowed"
+                    "Save requires POST."
+                    "text/plain; charset=utf-8"}}
         "home"
             {_text_response
                 start_response
@@ -476,7 +610,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 
 {fun _run_check []
-    state = {_build_state PROJECT_ROOT ""}
+    state = {_build_state PROJECT_ROOT "" null}
     title = {state.get "app_title"}
     site_root = {state.get "site_root"}
     sections = {state.get "sections"}
@@ -497,7 +631,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
         {_run_check}
         {return 0}}
 
-    state = {_build_state PROJECT_ROOT ""}
+    state = {_build_state PROJECT_ROOT "" null}
     host = {state.get "listen_host"}
     port = {int {state.get "listen_port"}}
 

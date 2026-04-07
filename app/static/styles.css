@@ -214,6 +214,23 @@ ul {
   gap: 1.5rem;
 }
 
+.flash-banner {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem 1.15rem;
+  border-radius: 1rem;
+  box-shadow: var(--shadow-ambient);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.flash-banner-success {
+  background: rgba(78, 222, 163, 0.18);
+}
+
+.flash-banner-error {
+  background: rgba(140, 92, 18, 0.12);
+}
+
 .overview-stack,
 .content-ledger {
   display: grid;
@@ -432,6 +449,39 @@ ul {
   margin-top: 1.2rem;
   display: grid;
   gap: 0.8rem;
+}
+
+.editor-form {
+  margin-top: 1.2rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.editor-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-soft);
+}
+
+.editor-textarea {
+  width: 100%;
+  min-height: 22rem;
+  resize: vertical;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(25, 28, 30, 0.12);
+  border-radius: 1rem;
+  background: var(--surface-low);
+  color: var(--ink);
+  font: 0.92rem/1.6 "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .editor-split {

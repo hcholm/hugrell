@@ -225,6 +225,20 @@
 }
 
 
+{fun flash_banner_node [flash]
+    {when flash == null
+        {return []}}
+
+    kind = {flash.get "kind" "info"}
+    banner_class = "flash-banner flash-banner-" + kind
+
+    {$mrml_node section [class={$ banner_class}]
+        {p [class="meta-label"] {$ kind}}
+        {p {$ {flash.get "message" ""}}}
+    }
+}
+
+
 {fun selected_context_panel_node [state]
     selected = {state.get "selected_file"}
     text = {_selected_preview_text selected}
@@ -300,7 +314,7 @@
                     {div [class="field-grid"]
                         {$ {field_row_node "Path" rel_path}}
                         {$ {field_row_node "Suffix" {selected.get "suffix" ""}}}
-                        {$ {field_row_node "Size" {{selected.get "size" 0}|str} + " bytes"}}
+                        {$ {field_row_node "Size" {str {selected.get "size" 0}} + " bytes"}}
                     }
                 }
                 {div [class="context-card"]
@@ -335,6 +349,8 @@
     mode = {_selected_mode selected}
     front_matter = {_split_front_matter text}
     body_text = {front_matter.get "body" text}
+    content_text = {if selected == null "" {selected.get "content" text}}
+    editable = {if selected == null false {selected.get "editable" false}}
 
     {if selected == null
         {$mrml_node section [class="editor-panel"]
@@ -379,13 +395,13 @@
                     {p [class="meta-label"] {$ {_summary_title selected}}}
                     {h3 {$ {selected.get "name" ""}}}
                 }
-                {span [class="data-chip"] {$ mode}}
+                {span [class="data-chip"] {$ {if editable mode "read-only"}}}
             }
             {div [class="editor-toolbar"]
                 {span [class="toolbar-pill"] "editor"}
                 {span [class="toolbar-pill"] "preview"}
                 {span [class="toolbar-pill"] "diagnostics"}
-                {span [class="toolbar-pill toolbar-pill-strong"] "read-only"}
+                {span [class="toolbar-pill toolbar-pill-strong"] {$ {if editable "save enabled" "read-only"}}}
             }
             {div [class="editor-meta"]
                 {p
@@ -394,7 +410,23 @@
                 {p
                     {span [class="meta-label"] "Size"}
                     {span {$ {selected.get "size" 0}} " bytes"}}
+                {p
+                    {span [class="meta-label"] "Modified"}
+                    {span [class="editor-path"] {$ {selected.get "modified" ""}}}}
             }
+            {if editable
+                {$mrml_node form [class="editor-form" method="post" action="/save"]
+                    {input [type="hidden" name="path" value={$ rel_path}]}
+                    {input [type="hidden" name="expected_modified" value={$ {selected.get "modified" ""}}]}
+                    {label [class="editor-label" for="editor-content"]
+                        "Document source"}
+                    {textarea [id="editor-content" class="editor-textarea" name="content"] {$ content_text}}
+                    {div [class="editor-actions"]
+                        {button [type="submit" class="primary-button"] "Save file"}
+                        {p [class="muted"] "This first save flow writes directly to the local Hugo workspace and blocks conflicting older edits."}
+                    }
+                }
+                []}
             {if mode == "content"
                 {div [class="editor-split"]
                     {section [class="editor-subpanel"]
@@ -406,7 +438,7 @@
                     }
                     {section [class="editor-subpanel"]
                         {div [class="subpanel-head"]
-                            {p [class="meta-label"] "Body"}
+                            {p [class="meta-label"] "Body preview"}
                             {span [class="data-chip"] "preview"}
                         }
                         {pre [class="editor-preview"] {$ body_text}}
@@ -441,6 +473,7 @@
 
 
 {fun overview_fragment_node [state]
+    build_status = {state.get "build_status" {dict}}
     {$mrml_node section [class="overview-stack" id="overview"]
         {section [class="hero-ledger"]
             {div [class="hero-copy"]
@@ -451,7 +484,7 @@
             {div [class="hero-meta"]
                 {div [class="hero-chip-stack"]
                     {span [class="data-chip data-chip-strong"] {$ {state.get "site_name" ""}}}
-                    {span [class="data-chip"] {$ {state.get "build_status" {dict}}.get "health" "Ready"}}
+                    {span [class="data-chip"] {$ {build_status.get "health" "Ready"}}}
                     {span [class="data-chip"] {$ {state.get "total_storage_text" "0 B"}}}
                 }
                 {p [class="muted"] "Built as a local-first MakrellPy showcase with MRON-backed configuration and Hugo-safe file access."}
@@ -483,6 +516,7 @@
 
 
 {fun render_overview_fragment [state]
+    build_status = {state.get "build_status" {dict}}
     {$mrml section [class="overview-stack" id="overview"]
         {section [class="hero-ledger hero-ledger-fragment"]
             {div [class="hero-copy"]
@@ -491,8 +525,8 @@
                 {p [class="hero-lede"] "Local-first Hugo workspace, tuned for MRON and MakrellPy."}
             }
             {div [class="hero-chip-stack"]
-                {span [class="data-chip data-chip-strong"] {$ {state.get "build_status" {dict}}.get "label" ""}} 
-                {span [class="data-chip"] {$ {state.get "build_status" {dict}}.get "detail" ""}}
+                {span [class="data-chip data-chip-strong"] {$ {build_status.get "label" ""}}}
+                {span [class="data-chip"] {$ {build_status.get "detail" ""}}}
             }
         }
         {div [class="metric-grid"]
@@ -523,7 +557,8 @@
 
 
 {fun render_home_page [state]
-    build_label = "Build " + {{state.get "build_status" {dict}}.get "last_build" ""}
+    build_status = {state.get "build_status" {dict}}
+    build_label = "Build " + {build_status.get "last_build" ""}
     nav_nodes = {nav_items_node}
     overview_node = {overview_fragment_node state}
     browser_node = {browser_fragment_node state}
@@ -564,6 +599,7 @@
                         }
                     }
                     {main [class="workspace-main"]
+                        {$ {flash_banner_node {state.get "flash"}}}
                         {$ overview_node}
                         {$ browser_node}
                         {section [class="supplement-grid"]
@@ -585,9 +621,9 @@
                                         {p [class="meta-label"] "Implementation track"}
                                         {h2 "Next slices"}
                                     }
-                                    {span [class="data-chip data-chip-strong"] {$ {state.get "build_status" {dict}}.get "health" ""}}
+                                    {span [class="data-chip data-chip-strong"] {$ {build_status.get "health" ""}}}
                                 }
-                                {p [class="section-copy"] {$ {state.get "build_status" {dict}}.get "detail" ""}}
+                                {p [class="section-copy"] {$ {build_status.get "detail" ""}}}
                                 {ul [class="step-list"]
                                     {$ next_nodes}
                                 }
