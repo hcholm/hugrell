@@ -179,7 +179,7 @@
     {if mode == "content"
         "Front matter and body should stay side by side, with preview and metadata close at hand."
         mode == "mron"
-            "MRON should feel structured, validated, and first-class rather than like plain text."
+            "Data files should stay readable, structured, and Hugo-aware rather than feel like anonymous text blobs."
         mode == "template"
             "Template and asset support should stay readable and Hugo-aware, with metadata close to the file."
         mode == "asset"
@@ -188,19 +188,70 @@
 }
 
 
+{fun _front_matter_lines [front_matter_text]
+    {if front_matter_text == ""
+        []
+        {front_matter_text.split "\n"}}
+}
+
+
+{fun _front_matter_field_pairs [front_matter_text]
+    fields = []
+    {for raw_line {_front_matter_lines front_matter_text}
+        line = {raw_line.strip}
+        {when line == ""
+            {continue}}
+        {when line.startswith "#"
+            {continue}}
+        separator = {line.find ":"}
+        {when separator == -1
+            {continue}}
+        key = {line @ (0 .. separator)} | {str.strip _}
+        value = {line @ ((separator + 1) .. null)} | {str.strip _}
+        {when key == ""
+            {continue}}
+        {fields.append [key value]}}
+    fields
+}
+
+
+{fun _front_matter_summary_rows [front_matter]
+    {if {front_matter.get "has_front_matter" false}
+        {_front_matter_field_pairs {front_matter.get "front_matter" ""}}
+        []}
+}
+
+
+{fun front_matter_field_node [pair]
+    {$mrml_node div [class="field-row"]
+        {span [class="field-label"] {$ pair@0}}
+        {span [class="field-value"] {$ pair@1}}
+    }
+}
+
+
+{fun front_matter_field_nodes [pairs]
+    pairs | {map front_matter_field_node _} | list
+}
+
+
 {fun _diagnostic_items [selected]
     mode = {_selected_mode selected}
     text = {_selected_preview_text selected}
     front_matter = {_split_front_matter text}
+    front_matter_rows = {_front_matter_summary_rows front_matter}
 
     {if mode == "content"
         [
             {if {front_matter.get "has_front_matter" false}
                 "Front matter detected and separated from body preview."
                 "No front matter block detected yet; content editing should highlight this."}
+            {if {front_matter.get "has_front_matter" false}
+                "Parsed " + {{front_matter_rows | len} | str} + " top-level front matter field(s)."
+                "Content file is currently body-only."}
         ]
         mode == "mron"
-            ["MRON file detected. Structured validation and formatting hooks should attach here."]
+            ["Data file detected. Hugo sites usually prefer YAML, TOML, or JSON data files here."]
         mode == "template"
             ["Template-like file detected. Keep syntax support and Hugo context visible in the side panel."]
         ["Read-only bootstrap mode is active. Save flow, validation, and richer preview come next."]}
@@ -249,6 +300,7 @@
     mode = {_selected_mode selected}
     diagnostics = {_diagnostic_items selected}
     rel_path = {state.get "selected_rel_path" ""}
+    front_matter_rows = {_front_matter_summary_rows front_matter}
 
     {if selected == null
         {$mrml_node aside [class="surface-panel context-panel"]
@@ -340,6 +392,15 @@
                         {pre [class="context-preview"] {$ text}}
                     }
                     []}
+                {if mode == "content"
+                    {$mrml_node div [class="context-card"]
+                        {p [class="meta-label"] "Front matter fields"}
+                        {if {front_matter_rows | len} > 0
+                            {div [class="field-grid"]
+                                {$ {front_matter_field_nodes front_matter_rows}}}
+                            {p [class="section-copy"] "No simple top-level `key: value` fields were extracted from the current front matter block."}}
+                    }
+                    []}
             }
         }}
 }
@@ -354,6 +415,7 @@
     body_text = {front_matter.get "body" text}
     content_text = {if selected == null "" {selected.get "content" text}}
     editable = {if selected == null false {selected.get "editable" false}}
+    front_matter_rows = {_front_matter_summary_rows front_matter}
 
     {if selected == null
         {$mrml_node section [class="editor-panel"]
@@ -437,7 +499,10 @@
                             {p [class="meta-label"] "Front matter"}
                             {span [class="data-chip"] {$ {if {front_matter.get "has_front_matter" false} "detected" "pending"}}}
                         }
-                        {pre [class="editor-preview editor-preview-short"] {$ {front_matter.get "front_matter" ""}}}
+                        {if {front_matter_rows | len} > 0
+                            {div [class="field-grid"]
+                                {$ {front_matter_field_nodes front_matter_rows}}}
+                            {pre [class="editor-preview editor-preview-short"] {$ {front_matter.get "front_matter" ""}}}}
                     }
                     {section [class="editor-subpanel"]
                         {div [class="subpanel-head"]

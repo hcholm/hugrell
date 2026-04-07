@@ -39,7 +39,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 
 {fun _count_files [path]
-    {len {_visible_files path}}
+    {_visible_files path} | len
 }
 
 
@@ -57,9 +57,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 
 {fun _is_visible_file_entry [entry]
-    {if {entry.is_file}
-        {_should_show_entry entry}
-        false}
+    {entry.is_file} && {_should_show_entry entry}
 }
 
 
@@ -192,9 +190,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 
 {fun _should_show_entry [path]
     name = path.name
-    {if name.startswith "."
-        false
-        true}
+    {not {name.startswith "."}}
 }
 
 
