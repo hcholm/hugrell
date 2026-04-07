@@ -1,0 +1,601 @@
+{fun nav_item_node [href label kicker active]
+    active_class = {if active "nav-item nav-item-active" "nav-item"}
+
+    {$mrml_node a [class={$ active_class} href={$ href}]
+        {span [class="nav-kicker"] {$ kicker}}
+        {span [class="nav-label"] {$ label}}
+    }
+}
+
+
+{fun nav_items_node []
+    [
+        {nav_item_node "#overview" "Dashboard" "01" true}
+        {nav_item_node "#browser" "Explorer" "02" false}
+        {nav_item_node "#content" "Content" "03" false}
+        {nav_item_node "#media" "Media" "04" false}
+        {nav_item_node "#deploy" "Deployment" "05" false}
+    ]
+}
+
+
+{fun metric_card_node [section]
+    card_class = "metric-card metric-card-" + {section.get "kind" "file"}
+
+    {$mrml_node article [class={$ card_class}]
+        {p [class="meta-label"] {$ {section.get "label" ""}}}
+        {p [class="metric-value"] {$ {section.get "count" 0}}}
+        {p [class="metric-copy"] {$ {section.get "description" ""}}}
+        {p [class="metric-path"] {$ {section.get "path" ""}}}
+    }
+}
+
+
+{fun metric_cards_nodes [sections]
+    sections | {map metric_card_node _} | list
+}
+
+
+{fun next_step_node [step]
+    {$mrml_node li [class="step-item"]
+        {span [class="step-bullet"] "•"}
+        {span {$ step}}
+    }
+}
+
+
+{fun next_steps_nodes [steps]
+    steps | {map next_step_node _} | list
+}
+
+
+{fun recent_file_row_node [entry]
+    href = {entry.get "href" "#"}
+
+    {$mrml_node a [class="recent-row" href={$ href}]
+        {div [class="recent-main"]
+            {p [class="recent-name"] {$ {entry.get "name" ""}}}
+            {p [class="recent-path"] {$ {entry.get "rel_path" ""}}}
+        }
+        {div [class="recent-meta"]
+            {span [class="data-chip"] {$ {entry.get "kind" ""}}}
+            {span [class="recent-time"] {$ {entry.get "modified_text" ""}}}
+            {span [class="recent-size"] {$ {entry.get "size_text" ""}}}
+        }
+    }
+}
+
+
+{fun recent_files_nodes [entries]
+    entries | {map recent_file_row_node _} | list
+}
+
+
+{fun browser_entry_node [entry]
+    depth = {entry.get "depth" 0}
+    kind = {entry.get "kind" "file"}
+    href = {entry.get "href" "#"}
+    rel_path = {entry.get "rel_path" ""}
+    selected_class = {if {entry.get "is_selected" false} " explorer-entry-selected" ""}
+    kind_class = {if kind == "dir" " explorer-entry-dir" " explorer-entry-file"}
+    indent_amount = depth + 1
+    indent_style = "padding-left: " + {str indent_amount} + "rem"
+    link_class = "explorer-entry" + selected_class + kind_class
+
+    {$mrml_node li
+        {a [
+            class={$ link_class}
+            href={$ href}
+            style={$ indent_style}
+        ]
+            {span [class="explorer-entry-kind"] {$ kind}}
+            {span [class="explorer-entry-name"] {$ rel_path}}
+        }
+    }
+}
+
+
+{fun browser_entries_nodes [entries]
+    entries | {map browser_entry_node _} | list
+}
+
+
+{fun _selected_preview_text [selected]
+    {if selected == null
+        ""
+        {selected.get "preview" ""}}
+}
+
+
+{fun _selected_rel_path [selected]
+    {if selected == null
+        ""
+        {selected.get "rel_path" ""}}
+}
+
+
+{fun _selected_suffix [selected]
+    {if selected == null
+        ""
+        {{selected.get "suffix" ""}.lower}}
+}
+
+
+{fun _selected_mode [selected]
+    rel_path = {_selected_rel_path selected}
+    suffix = {_selected_suffix selected}
+
+    {if rel_path.startswith "content/"
+        "content"
+        rel_path.startswith "data/" or suffix == ".mron"
+            "mron"
+        rel_path.startswith "layouts/" or [".html" ".css" ".js" ".ts" ".scss"].__contains__ suffix
+            "template"
+        [".png" ".jpg" ".jpeg" ".gif" ".svg" ".webp"].__contains__ suffix
+            "asset"
+        "text"}
+}
+
+
+{fun _split_front_matter [text]
+    {when {not {text.startswith "---\n"}}
+        {return {dict
+            "has_front_matter" false
+            "front_matter" ""
+            "body" text}}}
+
+    closing = {text.find "\n---\n" 4}
+    {if closing == -1
+        {dict
+            "has_front_matter" false
+            "front_matter" ""
+            "body" text}
+        {dict
+            "has_front_matter" true
+            "front_matter" {text.__getitem__ {slice 4 closing null}}
+            "body" {text.__getitem__ {slice closing + 5 null null}}}}
+}
+
+
+{fun _summary_title [selected]
+    mode = {_selected_mode selected}
+    {if mode == "content"
+        "Hugo content editor"
+        mode == "mron"
+            "MRON workspace"
+        mode == "template"
+            "Template workspace"
+        mode == "asset"
+            "Asset preview"
+        "Text workspace"}
+}
+
+
+{fun _summary_copy [selected]
+    mode = {_selected_mode selected}
+    {if mode == "content"
+        "Front matter and body should stay side by side, with preview and metadata close at hand."
+        mode == "mron"
+            "MRON should feel structured, validated, and first-class rather than like plain text."
+        mode == "template"
+            "Template and asset support should stay readable and Hugo-aware, with metadata close to the file."
+        mode == "asset"
+            "Static files should surface metadata and preview affordances before editing flows land."
+        "Plain text files should still open in the main editor surface with contextual metadata."}
+}
+
+
+{fun _diagnostic_items [selected]
+    mode = {_selected_mode selected}
+    text = {_selected_preview_text selected}
+    front_matter = {_split_front_matter text}
+
+    {if mode == "content"
+        [
+            {if {front_matter.get "has_front_matter" false}
+                "Front matter detected and separated from body preview."
+                "No front matter block detected yet; content editing should highlight this."}
+        ]
+        mode == "mron"
+            ["MRON file detected. Structured validation and formatting hooks should attach here."]
+        mode == "template"
+            ["Template-like file detected. Keep syntax support and Hugo context visible in the side panel."]
+        ["Read-only bootstrap mode is active. Save flow, validation, and richer preview come next."]}
+}
+
+
+{fun diagnostic_item_node [item]
+    {$mrml_node li [class="context-item"]
+        {span [class="context-dot"] "•"}
+        {span {$ item}}
+    }
+}
+
+
+{fun diagnostic_nodes [items]
+    items | {map diagnostic_item_node _} | list
+}
+
+
+{fun field_row_node [label value]
+    {$mrml_node div [class="field-row"]
+        {span [class="field-label"] {$ label}}
+        {span [class="field-value"] {$ value}}
+    }
+}
+
+
+{fun selected_context_panel_node [state]
+    selected = {state.get "selected_file"}
+    text = {_selected_preview_text selected}
+    front_matter = {_split_front_matter text}
+    mode = {_selected_mode selected}
+    diagnostics = {_diagnostic_items selected}
+    rel_path = {state.get "selected_rel_path" ""}
+
+    {if selected == null
+        {$mrml_node aside [class="surface-panel context-panel"]
+            {div [class="section-head"]
+                {div
+                    {p [class="meta-label"] "Context"}
+                    {h2 "Inspector"}
+                }
+                {span [class="data-chip"] "workspace"}
+            }
+            {div [class="context-stack"]
+                {p [class="section-copy"] "Pick a file from the explorer to inspect front matter, preview notes, and implementation cues."}
+                {div [class="field-grid"]
+                    {$ {field_row_node "Focus" "Three-pane Hugo editing"}}
+                    {$ {field_row_node "MRON" "Validation-first"}}
+                    {$ {field_row_node "Preview" "Local-first"}}
+                }
+            }
+        }
+        {selected.get "error"}
+            {$mrml_node aside [class="surface-panel context-panel"]
+                {div [class="section-head"]
+                    {div
+                        {p [class="meta-label"] "Context"}
+                        {h2 "Inspector"}
+                    }
+                    {span [class="data-chip data-chip-warn"] "error"}
+                }
+                {div [class="context-stack"]
+                    {p [class="section-copy"] {$ {selected.get "error" ""}}}
+                }
+            }
+        {selected.get "kind"} == "dir"
+            {$mrml_node aside [class="surface-panel context-panel"]
+                {div [class="section-head"]
+                    {div
+                        {p [class="meta-label"] "Context"}
+                        {h2 "Inspector"}
+                    }
+                    {span [class="data-chip"] "dir"}
+                }
+                {div [class="context-stack"]
+                    {p [class="section-copy"] "Directories should drive navigation, filters, and creation actions rather than occupy the main editor pane."}
+                    {div [class="field-grid"]
+                        {$ {field_row_node "Directory" {selected.get "name" ""}}}
+                        {$ {field_row_node "Path" rel_path}}
+                    }
+                }
+            }
+        {$mrml_node aside [class="surface-panel context-panel"]
+            {div [class="section-head"]
+                {div
+                    {p [class="meta-label"] "Context"}
+                    {h2 "Inspector"}
+                }
+                {span [class="data-chip"] {$ mode}}
+            }
+            {div [class="context-stack"]
+                {div [class="context-card"]
+                    {p [class="meta-label"] "Editing mode"}
+                    {h3 {$ {_summary_title selected}}}
+                    {p [class="section-copy"] {$ {_summary_copy selected}}}
+                }
+                {div [class="context-card"]
+                    {p [class="meta-label"] "File facts"}
+                    {div [class="field-grid"]
+                        {$ {field_row_node "Path" rel_path}}
+                        {$ {field_row_node "Suffix" {selected.get "suffix" ""}}}
+                        {$ {field_row_node "Size" {{selected.get "size" 0}|str} + " bytes"}}
+                    }
+                }
+                {div [class="context-card"]
+                    {p [class="meta-label"] "Diagnostics"}
+                    {ul [class="context-list"]
+                        {$ {diagnostic_nodes diagnostics}}
+                    }
+                }
+                {if mode == "content"
+                    {$mrml_node div [class="context-card"]
+                        {p [class="meta-label"] "Front matter"}
+                        {if {front_matter.get "has_front_matter" false}
+                            {pre [class="context-preview"] {$ {front_matter.get "front_matter" ""}}}
+                            {p [class="section-copy"] "No front matter preview available for this content file."}}
+                    }
+                    []}
+                {if mode == "mron"
+                    {$mrml_node div [class="context-card"]
+                        {p [class="meta-label"] "Data preview"}
+                        {pre [class="context-preview"] {$ text}}
+                    }
+                    []}
+            }
+        }}
+}
+
+
+{fun selected_file_panel_node [state]
+    selected = {state.get "selected_file"}
+    rel_path = {state.get "selected_rel_path" ""}
+    text = {_selected_preview_text selected}
+    mode = {_selected_mode selected}
+    front_matter = {_split_front_matter text}
+    body_text = {front_matter.get "body" text}
+
+    {if selected == null
+        {$mrml_node section [class="editor-panel"]
+            {div [class="editor-panel-head"]
+                {div
+                    {p [class="meta-label"] "Editor"}
+                    {h3 "Choose a file to inspect"}
+                }
+                {span [class="data-chip"] "read-only"}
+            }
+            {div [class="editor-note"]
+                {p "Open a Hugo content file, data document, or template from the explorer to inspect it here."}
+                {p [class="muted"] "This central pane is reserved for the editor surface, with context and preview information pushed to the right-hand inspector."}
+            }
+        }
+        {selected.get "error"}
+            {$mrml_node section [class="editor-panel"]
+                {div [class="editor-panel-head"]
+                    {div
+                        {p [class="meta-label"] "Editor"}
+                        {h3 {$ rel_path}}
+                    }
+                    {span [class="data-chip data-chip-warn"] "error"}
+                }
+                {p [class="muted"] {$ {selected.get "error" ""}}}
+            }
+        {selected.get "kind"} == "dir"
+            {$mrml_node section [class="editor-panel"]
+                {div [class="editor-panel-head"]
+                    {div
+                        {p [class="meta-label"] "Directory"}
+                        {h3 {$ {selected.get "name" ""}}}
+                    }
+                    {span [class="data-chip"] "folder"}
+                }
+                {p [class="editor-path"] {$ {selected.get "rel_path" ""}}}
+                {p [class="muted"] "This path is a directory. Pick a file entry to inspect text content and metadata."}
+            }
+        {$mrml_node section [class="editor-panel"]
+            {div [class="editor-panel-head"]
+                {div
+                    {p [class="meta-label"] {$ {_summary_title selected}}}
+                    {h3 {$ {selected.get "name" ""}}}
+                }
+                {span [class="data-chip"] {$ mode}}
+            }
+            {div [class="editor-toolbar"]
+                {span [class="toolbar-pill"] "editor"}
+                {span [class="toolbar-pill"] "preview"}
+                {span [class="toolbar-pill"] "diagnostics"}
+                {span [class="toolbar-pill toolbar-pill-strong"] "read-only"}
+            }
+            {div [class="editor-meta"]
+                {p
+                    {span [class="meta-label"] "Path"}
+                    {span [class="editor-path"] {$ {selected.get "rel_path" ""}}}}
+                {p
+                    {span [class="meta-label"] "Size"}
+                    {span {$ {selected.get "size" 0}} " bytes"}}
+            }
+            {if mode == "content"
+                {div [class="editor-split"]
+                    {section [class="editor-subpanel"]
+                        {div [class="subpanel-head"]
+                            {p [class="meta-label"] "Front matter"}
+                            {span [class="data-chip"] {$ {if {front_matter.get "has_front_matter" false} "detected" "pending"}}}
+                        }
+                        {pre [class="editor-preview editor-preview-short"] {$ {front_matter.get "front_matter" ""}}}
+                    }
+                    {section [class="editor-subpanel"]
+                        {div [class="subpanel-head"]
+                            {p [class="meta-label"] "Body"}
+                            {span [class="data-chip"] "preview"}
+                        }
+                        {pre [class="editor-preview"] {$ body_text}}
+                    }
+                }
+                {pre [class="editor-preview"] {$ text}}}
+        }}
+}
+
+
+{fun browser_fragment_node [state]
+    {$mrml_node section [class="studio-grid" id="browser"]
+        {section [class="surface-panel explorer-panel"]
+            {div [class="section-head"]
+                {div
+                    {p [class="meta-label"] "Explorer"}
+                    {h2 "Site tree"}
+                }
+                {span [class="data-chip"] {$ {state.get "total_files" 0}} " files"}
+            }
+            {p [class="section-copy"]
+                "Root: "
+                {code {$ {state.get "site_root" ""}}}}
+            {ul [class="explorer-list"]
+                {$ {browser_entries_nodes {state.get "browser_entries" []}}}
+            }
+        }
+        {$ {selected_file_panel_node state}}
+        {$ {selected_context_panel_node state}}
+    }
+}
+
+
+{fun overview_fragment_node [state]
+    {$mrml_node section [class="overview-stack" id="overview"]
+        {section [class="hero-ledger"]
+            {div [class="hero-copy"]
+                {p [class="meta-label"] "Architectural ledger"}
+                {h1 {$ {state.get "app_title" "Hugrell"}}}
+                {p [class="hero-lede"] {$ {state.get "tagline" ""}}}
+            }
+            {div [class="hero-meta"]
+                {div [class="hero-chip-stack"]
+                    {span [class="data-chip data-chip-strong"] {$ {state.get "site_name" ""}}}
+                    {span [class="data-chip"] {$ {state.get "build_status" {dict}}.get "health" "Ready"}}
+                    {span [class="data-chip"] {$ {state.get "total_storage_text" "0 B"}}}
+                }
+                {p [class="muted"] "Built as a local-first MakrellPy showcase with MRON-backed configuration and Hugo-safe file access."}
+            }
+        }
+        {section [class="summary-band"]
+            {div [class="summary-stat"]
+                {p [class="meta-label"] "Total files"}
+                {p [class="summary-value"] {$ {state.get "total_files" 0}}}
+            }
+            {div [class="summary-stat"]
+                {p [class="meta-label"] "Storage"}
+                {p [class="summary-value"] {$ {state.get "total_storage_text" "0 B"}}}
+            }
+            {div [class="summary-stat"]
+                {p [class="meta-label"] "Media"}
+                {p [class="summary-value"] {$ {state.get "media_count" 0}}}
+            }
+            {div [class="summary-stat"]
+                {p [class="meta-label"] "Layouts"}
+                {p [class="summary-value"] {$ {state.get "layout_count" 0}}}
+            }
+        }
+        {div [class="metric-grid"]
+            {$ {metric_cards_nodes {state.get "sections" []}}}
+        }
+    }
+}
+
+
+{fun render_overview_fragment [state]
+    {$mrml section [class="overview-stack" id="overview"]
+        {section [class="hero-ledger hero-ledger-fragment"]
+            {div [class="hero-copy"]
+                {p [class="meta-label"] "Overview"}
+                {h2 {$ {state.get "site_name" ""}}}
+                {p [class="hero-lede"] "Local-first Hugo workspace, tuned for MRON and MakrellPy."}
+            }
+            {div [class="hero-chip-stack"]
+                {span [class="data-chip data-chip-strong"] {$ {state.get "build_status" {dict}}.get "label" ""}} 
+                {span [class="data-chip"] {$ {state.get "build_status" {dict}}.get "detail" ""}}
+            }
+        }
+        {div [class="metric-grid"]
+            {$ {metric_cards_nodes {state.get "sections" []}}}
+        }
+    }
+}
+
+
+{fun render_browser_fragment [state]
+    {$mrml section [class="studio-grid" id="browser"]
+        {section [class="surface-panel explorer-panel"]
+            {div [class="section-head"]
+                {div
+                    {p [class="meta-label"] "Explorer"}
+                    {h2 "Site tree"}
+                }
+                {span [class="data-chip"] {$ {state.get "total_files" 0}} " files"}
+            }
+            {ul [class="explorer-list"]
+                {$ {browser_entries_nodes {state.get "browser_entries" []}}}
+            }
+        }
+        {$ {selected_file_panel_node state}}
+        {$ {selected_context_panel_node state}}
+    }
+}
+
+
+{fun render_home_page [state]
+    build_label = "Build " + {{state.get "build_status" {dict}}.get "last_build" ""}
+    nav_nodes = {nav_items_node}
+    overview_node = {overview_fragment_node state}
+    browser_node = {browser_fragment_node state}
+    recent_nodes = {recent_files_nodes {state.get "recent_files" []}}
+    next_nodes = {next_steps_nodes {state.get "next_steps" []}}
+
+    {$mrml html [lang="en"]
+        {head
+            {meta [charset="utf-8"]}
+            {meta [name="viewport" content="width=device-width, initial-scale=1"]}
+            {title {$ {state.get "app_title" "Hugrell"}}}
+            {link [rel="stylesheet" href="/static/styles.css"]}
+        }
+        {body
+            {div [class="app-shell"]
+                {aside [class="side-nav"]
+                    {div [class="brand-block"]
+                        {p [class="brand-mark"] "Hugrell"}
+                        {p [class="brand-subline"] "Static editing ledger"}
+                    }
+                    {nav [class="nav-list"]
+                        {$ nav_nodes}
+                    }
+                    {div [class="side-cta"]
+                        {a [class="primary-button" href="/?path=content/posts/hello.md"] "Open sample post"}
+                        {p [class="side-note"] "No network services required. All state stays on this machine."}
+                    }
+                }
+                {div [class="workspace-shell"]
+                    {header [class="topbar"]
+                        {div [class="topbar-block"]
+                            {p [class="meta-label"] "Site root"}
+                            {p [class="topbar-value"] {$ {state.get "site_root" ""}}}
+                        }
+                        {div [class="topbar-block topbar-block-right"]
+                            {span [class="data-chip"] {$ build_label}}
+                            {a [class="ghost-button" href="/fragments/overview"] "Fragment endpoint"}
+                        }
+                    }
+                    {main [class="workspace-main"]
+                        {$ overview_node}
+                        {$ browser_node}
+                        {section [class="supplement-grid"]
+                            {section [class="surface-panel"]
+                                {div [class="section-head"]
+                                    {div
+                                        {p [class="meta-label"] "Recent files"}
+                                        {h2 "Editing cadence"}
+                                    }
+                                    {span [class="data-chip"] {$ {len {state.get "recent_files" []}}} " tracked"}
+                                }
+                                {div [class="recent-list"]
+                                    {$ recent_nodes}
+                                }
+                            }
+                            {section [class="surface-panel" id="deploy"]
+                                {div [class="section-head"]
+                                    {div
+                                        {p [class="meta-label"] "Implementation track"}
+                                        {h2 "Next slices"}
+                                    }
+                                    {span [class="data-chip data-chip-strong"] {$ {state.get "build_status" {dict}}.get "health" ""}}
+                                }
+                                {p [class="section-copy"] {$ {state.get "build_status" {dict}}.get "detail" ""}}
+                                {ul [class="step-list"]
+                                    {$ next_nodes}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

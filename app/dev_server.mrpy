@@ -1,0 +1,509 @@
+{import json}
+{import mimetypes}
+{import os}
+{import pathlib}
+{import sys}
+{import time}
+{import urllib.parse}
+{import datetime}
+{import makrell}
+{import makrell.mron@[read_file]}
+{import wsgiref.simple_server@[make_server]}
+{import views@[render_home_page render_overview_fragment render_browser_fragment]}
+
+
+MODULE_PATH = {{pathlib.Path __spec__.origin}.resolve}
+APP_ROOT = MODULE_PATH.parent
+PROJECT_ROOT = APP_ROOT.parent
+LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
+
+
+{fun _ensure_sys_path [entry]
+    s = entry | str
+    {when {not {sys.path.__contains__ s}}
+        {sys.path.insert 0 s}}
+}
+
+
+{_ensure_sys_path APP_ROOT}
+{_ensure_sys_path LOCAL_MAKRELL_ROOT}
+
+
+{fun _resolve_site_root [project_root config]
+    configured = {config.get "site_root" "./samples/site"}
+    candidate = {pathlib.Path configured}
+    {when {not {candidate.is_absolute}}
+        candidate = project_root / candidate}
+    {candidate.resolve}
+}
+
+
+{fun _count_files [path]
+    {len {_visible_files path}}
+}
+
+
+{fun _visible_files [path]
+    {if {not {path.exists}}
+        []
+        {path.rglob "*"} | {filter _is_visible_file_entry _} | {sorted _ key=_entry_sort_key} | list
+    }
+}
+
+
+{fun _entry_sort_key [entry]
+    entry | str
+}
+
+
+{fun _is_visible_file_entry [entry]
+    {if {entry.is_file}
+        {_should_show_entry entry}
+        false}
+}
+
+
+{fun _file_size [entry]
+    {entry.stat}.st_size
+}
+
+
+{fun _count_bytes [path]
+    {_visible_files path} | {map _file_size _} | sum
+}
+
+
+{fun _format_bytes [size]
+    {if size == null
+        "0 B"
+        size < 1024
+            {str size} + " B"
+        size < 1024 * 1024
+            {str {round {size / 1024} 1}} + " KB"
+        size < 1024 * 1024 * 1024
+            {str {round {size / (1024 * 1024)} 1}} + " MB"
+        {str {round {size / (1024 * 1024 * 1024)} 1}} + " GB"}
+}
+
+
+{fun _format_age [timestamp]
+    delta = {int {time.time} - timestamp}
+    {if delta < 60
+        "just now"
+        delta < 3600
+            "<1h ago"
+        delta < 86400
+            "today"
+        delta < 86400 * 7
+            "this week"
+        {datetime.datetime.fromtimestamp timestamp}.strftime "%Y-%m-%d"}
+}
+
+
+{fun _classify_file [path]
+    suffix = {path.suffix.lower}
+    {if [".md" ".markdown"].__contains__ suffix
+        "content"
+        [".mron" ".json" ".yaml" ".yml" ".toml"].__contains__ suffix
+            "data"
+        [".html" ".xml" ".css" ".js" ".ts" ".scss"].__contains__ suffix
+            "layout"
+        [".png" ".jpg" ".jpeg" ".gif" ".svg" ".webp"].__contains__ suffix
+            "media"
+        "file"}
+}
+
+
+{fun _recent_file_sort_key [entry]
+    {entry.stat}.st_mtime
+}
+
+
+{fun _build_recent_files [site_root]
+    recent = {_visible_files site_root} | {sorted _ key=_recent_file_sort_key reverse=true} | list
+    recent_subset = {recent.__getitem__ {slice 0 6 null}}
+    recent_subset | {map {_recent_file_entry site_root _} _} | list
+}
+
+
+{fun _recent_file_entry [site_root entry]
+    rel_file = {entry.relative_to site_root}
+    rel_path = rel_file | str
+    stat = {entry.stat}
+    {dict
+        "name" entry.name
+        "rel_path" rel_path
+        "href" "/?path=" + {urllib.parse.quote rel_path}
+        "kind" {_classify_file entry}
+        "size" stat.st_size
+        "size_text" {_format_bytes stat.st_size}
+        "modified" stat.st_mtime
+        "modified_text" {_format_age {int stat.st_mtime}}}
+}
+
+
+{fun _parse_query [environ]
+    raw = {environ.get "QUERY_STRING" ""}
+    parsed = {urllib.parse.parse_qs raw}
+    result = {dict}
+    {for key parsed
+        {result.__setitem__ key {_first_query_value {parsed.__getitem__ key}}}}
+    result
+}
+
+
+{fun _first_query_value [values]
+    {if {len values} > 0 values@0 ""}
+}
+
+
+{fun _is_within_root [root target]
+    root_str = root | str
+    target_str = target | str
+    {os.path.commonpath [root_str target_str]} == root_str
+}
+
+
+{fun _safe_rel_path [rel_path]
+    {if rel_path == null
+        ""
+        {rel_path.strip "/\\"}}
+}
+
+
+{fun _resolve_site_path [site_root rel_path]
+    root = {site_root.resolve}
+    cleaned = {_safe_rel_path rel_path}
+    target = {(root / cleaned).resolve}
+    {when {not {_is_within_root root target}}
+        {raise "Path escapes configured Hugo root."}}
+    target
+}
+
+
+{fun _should_show_entry [path]
+    name = path.name
+    {if name.startswith "."
+        false
+        true}
+}
+
+
+{fun _is_media_file [path]
+    {_classify_file path} == "media"
+}
+
+
+{fun _append_browser_entries [entries site_root path depth selected_rel]
+    {when {not {_should_show_entry path}}
+        {return null}}
+
+    rel_path = {if path == site_root "" {str {path.relative_to site_root}}}
+    
+    is_dir = {path.is_dir}
+
+    {when rel_path != ""
+        is_selected = rel_path == selected_rel
+        {entries.append
+            {dict
+                "name" path.name
+                "rel_path" rel_path
+                "depth" depth
+                "kind" {if is_dir "dir" "file"}
+                "href" "/?path=" + {urllib.parse.quote rel_path}
+                "is_selected" is_selected}}}
+
+    {when is_dir
+        children = {list {path.iterdir}}
+        {for child children
+            {_append_browser_entries
+                entries
+                site_root
+                child
+                {if rel_path == "" depth depth + 1}
+                selected_rel}}}
+}
+
+
+{fun _read_text_preview [path]
+    {with {open {str path} encoding="utf-8" errors="replace"} as handle
+        text = {handle.read}
+        {if {len text} > 4000
+            {text.__getitem__ {slice 0 4000 null}} + "\n\n...[truncated]"
+            text}}
+}
+
+
+{fun _selected_file_state [site_root selected_rel]
+    rel_path = {_safe_rel_path selected_rel}
+    {when rel_path == ""
+        {return null}}
+
+    {try
+        target = {_resolve_site_path site_root rel_path}
+        {when {not {target.exists}}
+            {return {dict
+                "error" "Selected path does not exist."
+                "rel_path" rel_path}}}
+
+        {when {target.is_dir}
+            {return {dict
+                "rel_path" rel_path
+                "name" target.name
+                "kind" "dir"
+                "size" null
+                "preview" null
+                "suffix" ""
+                "modified" {str {target.stat}.st_mtime}}}}
+
+        stat = {target.stat}
+        {dict
+            "rel_path" rel_path
+            "name" target.name
+            "kind" "file"
+            "size" stat.st_size
+            "suffix" target.suffix
+            "modified" {str stat.st_mtime}
+            "preview" {_read_text_preview target}}
+        {catch e:Exception
+            {dict
+                "error" e|str
+                "rel_path" rel_path}}}
+}
+
+
+{fun _build_state [project_root selected_rel]
+    project_root_str = {str project_root}
+    config = {read_file project_root_str + "/hugrell.mron"}
+    site_root = {_resolve_site_root project_root config}
+    content_root = site_root / "content"
+    data_root = site_root / "data"
+    layouts_root = site_root / "layouts"
+    static_root = site_root / "static"
+    config_path = project_root / "hugrell.mron"
+    total_bytes = {_count_bytes site_root}
+    total_files = {_count_files site_root}
+    recent_files = {_build_recent_files site_root}
+    media_files = {filter _is_media_file {_visible_files static_root}} | list
+    media_count = {len media_files}
+    layout_count = {_count_files layouts_root}
+    ratio_seed = total_files * 8
+    storage_ratio = {min 100 {max 6 ratio_seed}}
+
+    sections = [
+        {dict
+            "label" "content"
+            "path" content_root|str
+            "count" {_count_files content_root}
+            "description" "Pages, posts, and markdown-ledger content."
+            "kind" "content"}
+        {dict
+            "label" "data"
+            "path" data_root|str
+            "count" {_count_files data_root}
+            "description" "MRON and supporting data sources."
+            "kind" "data"}
+        {dict
+            "label" "layouts"
+            "path" layouts_root|str
+            "count" {_count_files layouts_root}
+            "description" "Templates, partials, and rendering structure."
+            "kind" "layout"}
+        {dict
+            "label" "static"
+            "path" static_root|str
+            "count" {_count_files static_root}
+            "description" "CSS, images, and ship-ready assets."
+            "kind" "media"}
+    ]
+
+    browser_entries = []
+    {_append_browser_entries browser_entries site_root site_root 0 {_safe_rel_path selected_rel}}
+    selected_file = {_selected_file_state site_root selected_rel}
+
+    {dict
+        "app_title" {config.get "app_title" "Hugrell"}
+        "tagline" {config.get "tagline" "Local-first Hugo editing with MakrellPy and MRON."}
+        "listen_host" {config.get "listen_host" "127.0.0.1"}
+        "listen_port" {config.get "listen_port" 8096}
+        "site_name" {config.get "site_name" "Sample Hugo Site"}
+        "site_root" site_root|str
+        "config_path" config_path|str
+        "total_files" total_files
+        "total_storage_bytes" total_bytes
+        "total_storage_text" {_format_bytes total_bytes}
+        "storage_ratio" storage_ratio
+        "recent_files" recent_files
+        "media_count" media_count
+        "layout_count" layout_count
+        "selected_rel_path" {_safe_rel_path selected_rel}
+        "browser_entries" browser_entries
+        "selected_file" selected_file
+        "htmx_ready" false
+        "sections" sections
+        "build_status" {dict
+            "label" "Local loop"
+            "detail" "No remote dependencies configured"
+            "last_build" "5m ago"
+            "health" "Ready"}
+        "next_steps" [
+            "Wire in local logon and session handling."
+            "Add save flow for opened text files."
+            "Split content files into front matter and body views."
+            "Integrate MRON diagnostics and formatting helpers."
+            "Vendor HTMX locally and switch fragment links to live swaps."
+        ]}
+}
+
+
+{fun _response [start_response status body content_type]
+    {start_response status [
+        ("Content-Type" content_type)
+        ("Content-Length" {str {len body}})
+    ]}
+    [body]
+}
+
+
+{fun _text_response [start_response status text content_type]
+    {_response start_response status {text.encode "utf-8"} content_type}
+}
+
+
+{fun _json_response [start_response payload]
+    {_text_response
+        start_response
+        "200 OK"
+        {json.dumps payload indent=2}
+        "application/json; charset=utf-8"}
+}
+
+
+{fun _serve_static [start_response relative_path]
+    static_root = APP_ROOT / "static"
+    target = {(static_root / relative_path).resolve}
+    static_root_str = {str {static_root.resolve}}
+    target_str = {str target}
+
+    {when {not {target_str.startswith static_root_str}}
+        {return {_text_response
+            start_response
+            "404 Not Found"
+            "Static file not found."
+            "text/plain; charset=utf-8"}}}
+
+    {when {not {target.exists}}
+        {return {_text_response
+            start_response
+            "404 Not Found"
+            "Static file not found."
+            "text/plain; charset=utf-8"}}}
+
+    content_type = {mimetypes.guess_type target.name}@0
+    content_type = {if content_type == null "application/octet-stream" content_type}
+    {_response start_response "200 OK" {target.read_bytes} content_type}
+}
+
+
+{fun _resolve_route [path]
+    route = {match path
+        "/"
+            {dict "kind" "home"}
+        "/browse"
+            {dict "kind" "home"}
+        "/fragments/overview"
+            {dict "kind" "overview"}
+        "/fragments/browser"
+            {dict "kind" "browser"}
+        "/health"
+            {dict "kind" "health"}
+        _
+            {dict "kind" "fallback"}}
+
+    {if {route.get "kind"} == "fallback"
+        {if {path.startswith "/static/"}
+            {dict
+                "kind" "static"
+                "relative_path" {path.removeprefix "/static/"}}
+            {dict "kind" "missing"}}
+        route}
+}
+
+
+{fun application [environ start_response]
+    path = {environ.get "PATH_INFO" "/"}
+    query = {_parse_query environ}
+    selected_rel = {query.get "path" ""}
+    state = {_build_state PROJECT_ROOT selected_rel}
+    route = {_resolve_route path}
+    kind = {route.get "kind"}
+
+    {match kind
+        "home"
+            {_text_response
+                start_response
+                "200 OK"
+                {render_home_page state}
+                "text/html; charset=utf-8"}
+        "overview"
+            {_text_response
+                start_response
+                "200 OK"
+                {render_overview_fragment state}
+                "text/html; charset=utf-8"}
+        "browser"
+            {_text_response
+                start_response
+                "200 OK"
+                {render_browser_fragment state}
+                "text/html; charset=utf-8"}
+        "health"
+            {_json_response start_response
+                {dict
+                    "status" "ok"
+                    "app_title" {state.get "app_title"}
+                    "site_name" {state.get "site_name"}
+                    "site_root" {state.get "site_root"}}}
+        "static"
+            {_serve_static start_response {route.get "relative_path"}}
+        _
+            {_text_response
+                start_response
+                "404 Not Found"
+                "Not found."
+                "text/plain; charset=utf-8"}}
+}
+
+
+{fun _run_check []
+    state = {_build_state PROJECT_ROOT ""}
+    title = {state.get "app_title"}
+    site_root = {state.get "site_root"}
+    sections = {state.get "sections"}
+    {print "Hugrell bootstrap looks OK."}
+    {print "Title:" title}
+    {print "Site root:" site_root}
+    {for section sections
+        label = {section.get "label"}
+        count = {section.get "count"}
+        count_text = count|str
+        {print label + ":" + count_text + " file(s)"}}
+}
+
+
+{fun main [argv]
+    argv = {if argv == null {list {sys.argv.__getitem__ {slice 1 null null}}} argv}
+    {when {argv.__contains__ "--check"}
+        {_run_check}
+        {return 0}}
+
+    state = {_build_state PROJECT_ROOT ""}
+    host = {state.get "listen_host"}
+    port = {int {state.get "listen_port"}}
+
+    {print "Serving Hugrell on http://" + host + ":" + {str port}}
+    httpd = {make_server host port application}
+    {httpd.serve_forever}
+
+    0
+}

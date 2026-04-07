@@ -1,0 +1,6 @@
+{import dev_server@[main]}
+{import sys}
+
+
+{when __name__ == "__main__"
+    {raise {SystemExit {main {list {sys.argv.__getitem__ {slice 1 null null}}}}}}}

@@ -1,0 +1,6 @@
+app_title "Hugrell"
+tagline "Local-first Hugo editing with MakrellPy, MRON, and HTMX-shaped workflows."
+listen_host "127.0.0.1"
+listen_port 8096
+site_name "Sample Hugo Site"
+site_root "./samples/site"
