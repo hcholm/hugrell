@@ -256,6 +256,15 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 }
 
 
+{fun _compose_content_text [front_matter body]
+    front_matter_text = {front_matter.strip}
+    body_text = {body.rstrip}
+    {if front_matter_text == ""
+        body_text + "\n"
+        "---\n" + front_matter_text + "\n---\n\n" + body_text + "\n"}
+}
+
+
 {fun _selected_file_state [site_root selected_rel]
     rel_path = {_safe_rel_path selected_rel}
     {when rel_path == ""
@@ -457,7 +466,10 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 {fun _save_text_file [project_root form]
     rel_path = {_safe_rel_path {form.get "path" ""}}
     expected_modified = {form.get "expected_modified" ""}
-    content = {form.get "content" ""}
+    save_mode = {form.get "save_mode" "raw"}
+    content = {if save_mode == "content_split"
+        {_compose_content_text {form.get "front_matter" ""} {form.get "body" ""}}
+        {form.get "content" ""}}
 
     {when rel_path == ""
         {return {dict

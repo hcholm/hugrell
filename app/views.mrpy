@@ -1,28 +1,52 @@
-{fun nav_item_node [href label kicker active]
+{fun _icon_class [kind extra_class]
+    class_name = "icon-shell icon-" + kind
+    {if extra_class == "" class_name class_name + " " + extra_class}
+}
+
+
+{fun _file_icon_kind [kind]
+    {if kind == "content"
+        "content_file"
+        kind == "data"
+            "data"
+        kind == "layout"
+            "layout"
+        kind == "media"
+            "media_file"
+        kind == "dir"
+            "dir"
+        "file"}
+}
+
+
+{fun nav_item_node [href label kicker icon_kind active]
     active_class = {if active "nav-item nav-item-active" "nav-item"}
 
     {$mrml_node a [class={$ active_class} href={$ href}]
-        {span [class="nav-kicker"] {$ kicker}}
+        {span [class={$ {_icon_class icon_kind "nav-icon"}}]}
         {span [class="nav-label"] {$ label}}
+        {span [class="nav-kicker"] {$ kicker}}
     }
 }
 
 
 {fun nav_items_node []
     [
-        {nav_item_node "#overview" "Dashboard" "01" true}
-        {nav_item_node "#browser" "Explorer" "02" false}
-        {nav_item_node "#content" "Content" "03" false}
-        {nav_item_node "#media" "Media" "04" false}
-        {nav_item_node "#deploy" "Deployment" "05" false}
+        {nav_item_node "#overview" "Dashboard" "01" "dashboard" true}
+        {nav_item_node "#browser" "Explorer" "02" "explorer" false}
+        {nav_item_node "#content" "Content" "03" "content" false}
+        {nav_item_node "#media" "Media" "04" "media" false}
+        {nav_item_node "#deploy" "Deployment" "05" "deploy" false}
     ]
 }
 
 
 {fun metric_card_node [section]
     card_class = "metric-card metric-card-" + {section.get "kind" "file"}
+    icon_kind = {_file_icon_kind {section.get "kind" "file"}}
 
     {$mrml_node article [class={$ card_class}]
+        {span [class={$ {_icon_class icon_kind "metric-icon"}}]}
         {p [class="meta-label"] {$ {section.get "label" ""}}}
         {p [class="metric-value"] {$ {section.get "count" 0}}}
         {p [class="metric-copy"] {$ {section.get "description" ""}}}
@@ -51,8 +75,10 @@
 
 {fun recent_file_row_node [entry]
     href = {entry.get "href" "#"}
+    icon_kind = {_file_icon_kind {entry.get "kind" ""}}
 
     {$mrml_node a [class="recent-row" href={$ href}]
+        {span [class={$ {_icon_class icon_kind "recent-icon"}}]}
         {div [class="recent-main"]
             {p [class="recent-name"] {$ {entry.get "name" ""}}}
             {p [class="recent-path"] {$ {entry.get "rel_path" ""}}}
@@ -81,6 +107,7 @@
     indent_amount = depth + 1
     indent_style = "padding-left: " + {str indent_amount} + "rem"
     link_class = "explorer-entry" + selected_class + kind_class
+    icon_kind = {_file_icon_kind {if kind == "dir" "dir" {entry.get "kind" "file"}}}
 
     {$mrml_node li
         {a [
@@ -88,7 +115,7 @@
             href={$ href}
             style={$ indent_style}
         ]
-            {span [class="explorer-entry-kind"] {$ kind}}
+            {span [class={$ {_icon_class icon_kind "explorer-icon"}}]}
             {span [class="explorer-entry-name"] {$ rel_path}}
         }
     }
@@ -125,15 +152,15 @@
     rel_path = {_selected_rel_path selected}
     suffix = {_selected_suffix selected}
 
-    {if rel_path.startswith "content/"
-        "content"
-        rel_path.startswith "data/" or suffix == ".mron"
-            "mron"
-        rel_path.startswith "layouts/" or [".html" ".css" ".js" ".ts" ".scss"].__contains__ suffix
-            "template"
-        [".png" ".jpg" ".jpeg" ".gif" ".svg" ".webp"].__contains__ suffix
-            "asset"
-        "text"}
+    {when {rel_path.startswith "content/"}
+        {return "content"}}
+    {when {rel_path.startswith "data/"} || suffix == ".mron"
+        {return "mron"}}
+    {when {rel_path.startswith "layouts/"} || [".html" ".css" ".js" ".ts" ".scss"].__contains__ suffix
+        {return "template"}}
+    {when [".png" ".jpg" ".jpeg" ".gif" ".svg" ".webp"].__contains__ suffix
+        {return "asset"}}
+    "text"
 }
 
 
@@ -235,6 +262,145 @@
 }
 
 
+{fun front_matter_field_grid_node [pairs]
+    {$mrml_node div [class="field-grid"]
+        {$ {front_matter_field_nodes pairs}}}
+}
+
+
+{fun front_matter_form_fields_node [pairs]
+    {if {len pairs} > 0
+        {front_matter_field_grid_node pairs}
+        []}
+}
+
+
+{fun front_matter_preview_block_node [front_matter pairs]
+    {if {len pairs} > 0
+        {front_matter_field_grid_node pairs}
+        {$mrml_node pre [class="editor-preview editor-preview-short"] {$ {front_matter.get "front_matter" ""}}}}
+}
+
+
+{fun _markdown_heading_level [line]
+    stripped = {line.lstrip}
+    {if {stripped.startswith "###### "}
+        6
+        {stripped.startswith "##### "}
+            5
+        {stripped.startswith "#### "}
+            4
+        {stripped.startswith "### "}
+            3
+        {stripped.startswith "## "}
+            2
+        {stripped.startswith "# "}
+            1
+        0}
+}
+
+
+{fun _markdown_heading_text [line level]
+    stripped = {line.lstrip}
+    sliced = {stripped.__getitem__ {slice level + 1 null null}}
+    {sliced.strip}
+}
+
+
+{fun markdown_heading_node [line]
+    level = {_markdown_heading_level line}
+    text = {_markdown_heading_text line level}
+    {if level == 1
+        {$mrml_node h1 [class="markdown-heading markdown-heading-1"] {$ text}}
+        level == 2
+            {$mrml_node h2 [class="markdown-heading markdown-heading-2"] {$ text}}
+        level == 3
+            {$mrml_node h3 [class="markdown-heading markdown-heading-3"] {$ text}}
+        level == 4
+            {$mrml_node h4 [class="markdown-heading markdown-heading-4"] {$ text}}
+        level == 5
+            {$mrml_node h5 [class="markdown-heading markdown-heading-5"] {$ text}}
+        {$mrml_node h6 [class="markdown-heading markdown-heading-6"] {$ text}}}
+}
+
+
+{fun markdown_paragraph_node [text]
+    {$mrml_node p [class="markdown-paragraph"] {$ text}}
+}
+
+
+{fun markdown_list_item_node [text]
+    {$mrml_node li {$ text}}
+}
+
+
+{fun markdown_list_node [items]
+    item_nodes = []
+    {for item items
+        {item_nodes.append {markdown_list_item_node item}}}
+
+    {$mrml_node ul [class="markdown-list"]
+        {$ item_nodes}}
+}
+
+
+{fun _flush_markdown_paragraph [nodes paragraph_lines]
+    {when {len paragraph_lines} == 0
+        {return null}}
+
+    paragraph_text = {paragraph_lines.join " "}
+    {nodes.append {markdown_paragraph_node paragraph_text}}
+    {paragraph_lines.clear}
+}
+
+
+{fun _flush_markdown_list [nodes list_items]
+    {when {len list_items} == 0
+        {return null}}
+
+    {nodes.append {markdown_list_node list_items}}
+    {list_items.clear}
+}
+
+
+{fun markdown_preview_nodes [text]
+    lines = {text.split "\n"}
+    nodes = []
+    paragraph_lines = []
+    list_items = []
+
+    {for raw_line lines
+        line = {raw_line.rstrip}
+        stripped = {line.strip}
+        heading_level = {_markdown_heading_level line}
+        is_list_item = stripped.startswith "- "
+
+        {when stripped == ""
+            {_flush_markdown_paragraph nodes paragraph_lines}
+            {_flush_markdown_list nodes list_items}
+            {continue}}
+
+        {when heading_level > 0
+            {_flush_markdown_paragraph nodes paragraph_lines}
+            {_flush_markdown_list nodes list_items}
+            {nodes.append {markdown_heading_node line}}
+            {continue}}
+
+        {when is_list_item
+            {_flush_markdown_paragraph nodes paragraph_lines}
+            item_text = {stripped.__getitem__ {slice 2 null null}}
+            {list_items.append {item_text.strip}}
+            {continue}}
+
+        {_flush_markdown_list nodes list_items}
+        {paragraph_lines.append stripped}}
+
+    {_flush_markdown_paragraph nodes paragraph_lines}
+    {_flush_markdown_list nodes list_items}
+    nodes
+}
+
+
 {fun _diagnostic_items [selected]
     mode = {_selected_mode selected}
     text = {_selected_preview_text selected}
@@ -275,6 +441,123 @@
     {$mrml_node div [class="field-row"]
         {span [class="field-label"] {$ label}}
         {span [class="field-value"] {$ value}}
+    }
+}
+
+
+{fun content_edit_form_node [rel_path selected front_matter front_matter_rows front_matter_text body_text]
+    {$mrml_node form [class="editor-form" method="post" action="/save"]
+        {input [type="hidden" name="path" value={$ rel_path}]}
+        {input [type="hidden" name="expected_modified" value={$ {selected.get "modified" ""}}]}
+        {input [type="hidden" name="save_mode" value="content_split"]}
+        {div [class="editor-split"]
+            {section [class="editor-subpanel"]
+                {div [class="subpanel-head"]
+                    {p [class="meta-label"] "Front matter"}
+                    {span [class="data-chip"] {$ {if {front_matter.get "has_front_matter" false} "detected" "new"}}}
+                }
+                {$ {front_matter_form_fields_node front_matter_rows}}
+                {label [class="editor-label" for="editor-front-matter"]
+                    "Front matter source"}
+                {textarea [id="editor-front-matter" class="editor-textarea editor-textarea-short" name="front_matter"] {$ front_matter_text}}
+            }
+            {section [class="editor-subpanel"]
+                {div [class="subpanel-head"]
+                    {p [class="meta-label"] "Body"}
+                    {span [class="data-chip"] "markdown"}
+                }
+                {label [class="editor-label" for="editor-body"]
+                    "Body source"}
+                {textarea [id="editor-body" class="editor-textarea" name="body"] {$ body_text}}
+            }
+        }
+        {div [class="editor-actions"]
+            {button [type="submit" class="primary-button"]
+                {span [class={$ {_icon_class "save" "button-icon"}}]}
+                "Save content"}
+            {p [class="muted"] "Front matter and body are saved back as one ordinary Hugo content file."}
+        }
+    }
+}
+
+
+{fun text_edit_form_node [rel_path selected content_text]
+    {$mrml_node form [class="editor-form" method="post" action="/save"]
+        {input [type="hidden" name="path" value={$ rel_path}]}
+        {input [type="hidden" name="expected_modified" value={$ {selected.get "modified" ""}}]}
+        {label [class="editor-label" for="editor-content"]
+            "Document source"}
+        {textarea [id="editor-content" class="editor-textarea" name="content"] {$ content_text}}
+        {div [class="editor-actions"]
+            {button [type="submit" class="primary-button"]
+                {span [class={$ {_icon_class "save" "button-icon"}}]}
+                "Save file"}
+            {p [class="muted"] "This first save flow writes directly to the local Hugo workspace and blocks conflicting older edits."}
+        }
+    }
+}
+
+
+{fun content_preview_node [front_matter front_matter_rows markdown_nodes]
+    {$mrml_node div [class="editor-split"]
+        {section [class="editor-subpanel"]
+            {div [class="subpanel-head"]
+                {p [class="meta-label"] "Front matter"}
+                {span [class="data-chip"] {$ {if {front_matter.get "has_front_matter" false} "detected" "pending"}}}
+            }
+            {$ {front_matter_preview_block_node front_matter front_matter_rows}}
+        }
+        {section [class="editor-subpanel"]
+            {div [class="subpanel-head"]
+                {p [class="meta-label"] "Body preview"}
+                {span [class="data-chip"] "markdown"}
+            }
+            {div [class="editor-preview editor-preview-prose"]
+                {$ markdown_nodes}}
+        }
+    }
+}
+
+
+{fun raw_preview_node [text]
+    {$mrml_node pre [class="editor-preview"] {$ text}}
+}
+
+
+{fun context_front_matter_body_node [front_matter]
+    {if {front_matter.get "has_front_matter" false}
+        {$mrml_node pre [class="context-preview"] {$ {front_matter.get "front_matter" ""}}}
+        {$mrml_node p [class="section-copy"] "No front matter preview available for this content file."}}
+}
+
+
+{fun context_front_matter_node [front_matter]
+    {$mrml_node div [class="context-card"]
+        {p [class="meta-label"] "Front matter"}
+        {$ {context_front_matter_body_node front_matter}}
+    }
+}
+
+
+{fun context_front_matter_fields_body_node [front_matter_rows]
+    {if {len front_matter_rows} > 0
+        {front_matter_field_grid_node front_matter_rows}
+        {$mrml_node p [class="section-copy"] "No simple top-level `key: value` fields were extracted from the current front matter block."}}
+}
+
+
+{fun context_front_matter_fields_node [front_matter_rows]
+    {$mrml_node div [class="context-card"]
+        {p [class="meta-label"] "Front matter fields"}
+        {$ {context_front_matter_fields_body_node front_matter_rows}}
+    }
+}
+
+
+{fun context_data_preview_node [text]
+    {$mrml_node div [class="context-card"]
+        {p [class="meta-label"] "Data preview"}
+        {pre [class="context-preview"] {$ text}}
     }
 }
 
@@ -378,29 +661,15 @@
                         {$ {diagnostic_nodes diagnostics}}
                     }
                 }
-                {if mode == "content"
-                    {$mrml_node div [class="context-card"]
-                        {p [class="meta-label"] "Front matter"}
-                        {if {front_matter.get "has_front_matter" false}
-                            {pre [class="context-preview"] {$ {front_matter.get "front_matter" ""}}}
-                            {p [class="section-copy"] "No front matter preview available for this content file."}}
-                    }
-                    []}
-                {if mode == "mron"
-                    {$mrml_node div [class="context-card"]
-                        {p [class="meta-label"] "Data preview"}
-                        {pre [class="context-preview"] {$ text}}
-                    }
-                    []}
-                {if mode == "content"
-                    {$mrml_node div [class="context-card"]
-                        {p [class="meta-label"] "Front matter fields"}
-                        {if {front_matter_rows | len} > 0
-                            {div [class="field-grid"]
-                                {$ {front_matter_field_nodes front_matter_rows}}}
-                            {p [class="section-copy"] "No simple top-level `key: value` fields were extracted from the current front matter block."}}
-                    }
-                    []}
+                {$ {if mode == "content"
+                    {context_front_matter_node front_matter}
+                    []}}
+                {$ {if mode == "mron"
+                    {context_data_preview_node text}
+                    []}}
+                {$ {if mode == "content"
+                    {context_front_matter_fields_node front_matter_rows}
+                    []}}
             }
         }}
 }
@@ -411,11 +680,21 @@
     rel_path = {state.get "selected_rel_path" ""}
     text = {_selected_preview_text selected}
     mode = {_selected_mode selected}
-    front_matter = {_split_front_matter text}
-    body_text = {front_matter.get "body" text}
     content_text = {if selected == null "" {selected.get "content" text}}
+    front_matter = {_split_front_matter content_text}
+    front_matter_text = {front_matter.get "front_matter" ""}
+    body_text = {front_matter.get "body" content_text}
     editable = {if selected == null false {selected.get "editable" false}}
     front_matter_rows = {_front_matter_summary_rows front_matter}
+    markdown_nodes = {markdown_preview_nodes body_text}
+    edit_form_node = {if editable
+        {if mode == "content"
+            {content_edit_form_node rel_path selected front_matter front_matter_rows front_matter_text body_text}
+            {text_edit_form_node rel_path selected content_text}}
+        []}
+    preview_node = {if mode == "content"
+        {content_preview_node front_matter front_matter_rows markdown_nodes}
+        {raw_preview_node text}}
 
     {if selected == null
         {$mrml_node section [class="editor-panel"]
@@ -463,10 +742,18 @@
                 {span [class="data-chip"] {$ {if editable mode "read-only"}}}
             }
             {div [class="editor-toolbar"]
-                {span [class="toolbar-pill"] "editor"}
-                {span [class="toolbar-pill"] "preview"}
-                {span [class="toolbar-pill"] "diagnostics"}
-                {span [class="toolbar-pill toolbar-pill-strong"] {$ {if editable "save enabled" "read-only"}}}
+                {span [class="toolbar-pill"]
+                    {span [class={$ {_icon_class "content" "toolbar-icon"}}]}
+                    "editor"}
+                {span [class="toolbar-pill"]
+                    {span [class={$ {_icon_class "preview" "toolbar-icon"}}]}
+                    "preview"}
+                {span [class="toolbar-pill"]
+                    {span [class={$ {_icon_class "diagnostics" "toolbar-icon"}}]}
+                    "diagnostics"}
+                {span [class="toolbar-pill toolbar-pill-strong"]
+                    {span [class={$ {_icon_class "save" "toolbar-icon"}}]}
+                    {$ {if editable "save enabled" "read-only"}}}
             }
             {div [class="editor-meta"]
                 {p
@@ -479,40 +766,8 @@
                     {span [class="meta-label"] "Modified"}
                     {span [class="editor-path"] {$ {selected.get "modified" ""}}}}
             }
-            {if editable
-                {$mrml_node form [class="editor-form" method="post" action="/save"]
-                    {input [type="hidden" name="path" value={$ rel_path}]}
-                    {input [type="hidden" name="expected_modified" value={$ {selected.get "modified" ""}}]}
-                    {label [class="editor-label" for="editor-content"]
-                        "Document source"}
-                    {textarea [id="editor-content" class="editor-textarea" name="content"] {$ content_text}}
-                    {div [class="editor-actions"]
-                        {button [type="submit" class="primary-button"] "Save file"}
-                        {p [class="muted"] "This first save flow writes directly to the local Hugo workspace and blocks conflicting older edits."}
-                    }
-                }
-                []}
-            {if mode == "content"
-                {div [class="editor-split"]
-                    {section [class="editor-subpanel"]
-                        {div [class="subpanel-head"]
-                            {p [class="meta-label"] "Front matter"}
-                            {span [class="data-chip"] {$ {if {front_matter.get "has_front_matter" false} "detected" "pending"}}}
-                        }
-                        {if {front_matter_rows | len} > 0
-                            {div [class="field-grid"]
-                                {$ {front_matter_field_nodes front_matter_rows}}}
-                            {pre [class="editor-preview editor-preview-short"] {$ {front_matter.get "front_matter" ""}}}}
-                    }
-                    {section [class="editor-subpanel"]
-                        {div [class="subpanel-head"]
-                            {p [class="meta-label"] "Body preview"}
-                            {span [class="data-chip"] "preview"}
-                        }
-                        {pre [class="editor-preview"] {$ body_text}}
-                    }
-                }
-                {pre [class="editor-preview"] {$ text}}}
+            {$ edit_form_node}
+            {$ preview_node}
         }}
 }
 
@@ -657,12 +912,26 @@
                 }
                 {div [class="workspace-shell"]
                     {header [class="topbar"]
-                        {div [class="topbar-block"]
-                            {p [class="meta-label"] "Site root"}
-                            {p [class="topbar-value"] {$ {state.get "site_root" ""}}}
+                        {div [class="topbar-search"]
+                            {span [class={$ {_icon_class "search" "topbar-icon"}}]}
+                            {div [class="topbar-search-copy"]
+                                {p [class="meta-label"] "Search workspace"}
+                                {p [class="topbar-value"] "Files, front matter, and templates"}
+                            }
                         }
                         {div [class="topbar-block topbar-block-right"]
+                            {div [class="topbar-site"]
+                                {p [class="meta-label"] "Site root"}
+                                {p [class="topbar-value"] {$ {state.get "site_root" ""}}}
+                            }
                             {span [class="data-chip"] {$ build_label}}
+                            {button [type="button" class="topbar-action" title="Notifications"]
+                                {span [class={$ {_icon_class "notifications" "topbar-action-icon"}}]}}
+                            {button [type="button" class="topbar-action" title="Settings"]
+                                {span [class={$ {_icon_class "settings" "topbar-action-icon"}}]}}
+                            {a [class="deploy-button" href="#deploy"]
+                                {span [class={$ {_icon_class "deploy" "button-icon"}}]}
+                                "Deploy"}
                             {a [class="ghost-button" href="/fragments/overview"] "Fragment endpoint"}
                         }
                     }
@@ -677,7 +946,9 @@
                                         {p [class="meta-label"] "Recent files"}
                                         {h2 "Editing cadence"}
                                     }
-                                    {span [class="data-chip"] {$ {len {state.get "recent_files" []}}} " tracked"}
+                                    {span [class="data-chip"]
+                                        {span [class={$ {_icon_class "info" "chip-icon"}}]}
+                                        {$ {len {state.get "recent_files" []}}} " tracked"}
                                 }
                                 {div [class="recent-list"]
                                     {$ recent_nodes}
@@ -689,7 +960,9 @@
                                         {p [class="meta-label"] "Implementation track"}
                                         {h2 "Next slices"}
                                     }
-                                    {span [class="data-chip data-chip-strong"] {$ {build_status.get "health" ""}}}
+                                    {span [class="data-chip data-chip-strong"]
+                                        {span [class={$ {_icon_class "spark" "chip-icon"}}]}
+                                        {$ {build_status.get "health" ""}}}
                                 }
                                 {p [class="section-copy"] {$ {build_status.get "detail" ""}}}
                                 {ul [class="step-list"]
