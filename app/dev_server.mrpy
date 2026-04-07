@@ -9,7 +9,7 @@
 {import makrell}
 {import makrell.mron@[read_file]}
 {import wsgiref.simple_server@[make_server]}
-{import views@[render_home_page render_overview_fragment render_browser_fragment]}
+{import html_views@[render_home_page render_overview_fragment render_browser_fragment]}
 
 
 MODULE_PATH = {{pathlib.Path __spec__.origin}.resolve}
