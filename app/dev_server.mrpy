@@ -159,7 +159,7 @@ LOCAL_MAKRELL_ROOT = PROJECT_ROOT.parent.parent / "src" / "impl" / "py"
 {fun _single_value_dict [parsed]
     result = {dict}
     {for key parsed
-        result @ key = {_first_query_value {parsed @ key}}}
+        result @ key = {_first_query_value {parsed.__getitem__ key}}}
     result
 }
 
